@@ -13,6 +13,10 @@
       --hint-color: var(--tg-theme-hint-color, #888);
       --button-color: var(--tg-theme-button-color, #3390ec);
       --button-text: var(--tg-theme-button-text-color, #fff);
+      
+      /* Мягкие акцентные цвета для ближайших уроков */
+      --accent-bg: rgba(51, 144, 236, 0.08);
+      --accent-border: var(--button-color);
     }
 
     body {
@@ -87,7 +91,18 @@
       align-items: center;
       font-size: 13px;
       margin-bottom: 6px;
+      padding: 4px 6px;
+      border-radius: 6px;
       cursor: pointer;
+      transition: background-color 0.2s ease, border-color 0.2s ease;
+      border-left: 3px solid transparent;
+    }
+
+    /* Аккуратная и не броская подсветка ближайшего предмета */
+    .lesson-item.is-next {
+      background-color: var(--accent-bg);
+      border-left-color: var(--accent-border);
+      font-weight: 500;
     }
 
     .lesson-item input {
@@ -97,7 +112,10 @@
 
     .completed {
       text-decoration: line-through;
-      color: var(--hint-color);
+      color: var(--hint-color) !important;
+      background-color: transparent !important;
+      border-left-color: transparent !important;
+      font-weight: normal !important;
     }
 
     /* Модальное окно редактирования */
@@ -167,7 +185,6 @@
   const userId = tg.initDataUnsafe?.user?.id || 12345;
   const daysOrder = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб"];
 
-
   const API_URL = "https://my-school-schedule.onrender.com/api";
 
   let userSchedule = null;
@@ -181,6 +198,30 @@
     "Пт": ["Литература", "Русский язык", "Физкультура"],
     "Сб": ["География", "Английский"]
   };
+
+  // Поиск ближайшего уроков каждого уникального предмета
+  function getNextSubjectKeys(schedule) {
+    let jsDay = new Date().getDay(); 
+    let todayIdx = jsDay === 0 ? 0 : jsDay - 1; // Если Воскресенье, то берем от Понедельника (0)
+
+    const foundSubjects = new Set();
+    const nextKeys = new Set();
+
+    for (let i = 0; i < 6; i++) {
+      const currentDayIdx = (todayIdx + i) % 6;
+      const dayName = daysOrder[currentDayIdx];
+      const lessons = schedule[dayName] || [];
+
+      lessons.forEach((lesson, lIdx) => {
+        if (lesson && !foundSubjects.has(lesson)) {
+          foundSubjects.add(lesson);
+          nextKeys.add(`${dayName}_${lIdx}`);
+        }
+      });
+    }
+
+    return nextKeys;
+  }
 
   async function loadData() {
     try {
@@ -228,6 +269,8 @@
     const grid = document.getElementById("scheduleGrid");
     grid.innerHTML = "";
 
+    const nextSubjectKeys = getNextSubjectKeys(schedule);
+
     daysOrder.forEach((day, index) => {
       const dateObj = getTargetDate(index, resetTime);
       const dateStr = dateObj.toLocaleDateString("ru-RU", { day: "numeric", month: "long" });
@@ -240,20 +283,21 @@
       (schedule[day] || []).forEach((lesson, lIdx) => {
         const storageKey = `${userId}_${dateKey}_${day}_${lIdx}`;
         const isChecked = taskStates[storageKey] === true;
+        const isNext = nextSubjectKeys.has(`${day}_${lIdx}`);
 
         lessonsHtml += `
-          <label class="lesson-item ${isChecked ? 'completed' : ''}">
+          <label class="lesson-item ${isChecked ? 'completed' : ''} ${isNext && !isChecked ? 'is-next' : ''}">
             <input type="checkbox" ${isChecked ? 'checked' : ''} onchange="toggleLesson('${storageKey}', this)">
             ${lesson}
           </label>
         `;
       });
 
-        card.innerHTML = `
-          <div class="day-title">${day}</div>
-          <div class="day-date">${dateStr}</div>
-          ${lessonsHtml || '<div style="font-size:12px; color:#888;">Нет уроков</div>'}
-        `;
+      card.innerHTML = `
+        <div class="day-title">${day}</div>
+        <div class="day-date">${dateStr}</div>
+        ${lessonsHtml || '<div style="font-size:12px; color:#888;">Нет уроков</div>'}
+      `;
       grid.appendChild(card);
     });
   }
