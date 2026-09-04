@@ -171,7 +171,7 @@
         Формат: День: Предмет1, Предмет2
       </div>
       <textarea id="scheduleInput"></textarea>
-      <div style="display:flex; justify-content:space-between; margin-top:10px;">
+      <div style="display:flex; justify-style:space-between; margin-top:10px;">
         <button class="btn" style="background:#888;" onclick="toggleEditModal()">Отмена</button>
         <button class="btn" onclick="saveScheduleFromApp()">Сохранить</button>
       </div>
@@ -199,17 +199,47 @@
     "Сб": ["География", "Английский"]
   };
 
-  // Поиск ближайшего уроков каждого уникального предмета
-  function getNextSubjectKeys(schedule) {
-    let jsDay = new Date().getDay(); 
-    let todayIdx = jsDay === 0 ? 0 : jsDay - 1; // Если Воскресенье, то берем от Понедельника (0)
+  // Вычисление реальной даты для каждого дня расписания
+  function getTargetDate(dayIndex, resetTimeStr) {
+    const now = new Date();
+    const currentDay = now.getDay();
+    let targetDayNum = dayIndex + 1; 
+    let diff = targetDayNum - (currentDay === 0 ? 7 : currentDay);
 
+    const [rHours, rMinutes] = resetTimeStr.split(":").map(Number);
+    const resetTimeToday = new Date(now);
+    resetTimeToday.setHours(rHours, rMinutes, 0, 0);
+
+    if (diff === 0 && now >= resetTimeToday) {
+      diff += 7;
+    } else if (diff < 0) {
+      diff += 7;
+    }
+
+    const targetDate = new Date(now);
+    targetDate.setDate(now.getDate() + diff);
+    return targetDate;
+  }
+
+  // Поиск ближайших уроков строго по календарному порядку дат
+  function getNextSubjectKeys(schedule, resetTimeStr) {
     const foundSubjects = new Set();
     const nextKeys = new Set();
 
-    for (let i = 0; i < 6; i++) {
-      const currentDayIdx = (todayIdx + i) % 6;
-      const dayName = daysOrder[currentDayIdx];
+    // 1. Создаем список дней с их реальными датами
+    const orderedDays = daysOrder.map((day, index) => {
+      return {
+        day: day,
+        date: getTargetDate(index, resetTimeStr)
+      };
+    });
+
+    // 2. Сортируем дни по возрастанию даты
+    orderedDays.sort((a, b) => a.date - b.date);
+
+    // 3. Ищем ближайшие первые вхождения каждого предмета
+    orderedDays.forEach(item => {
+      const dayName = item.day;
       const lessons = schedule[dayName] || [];
 
       lessons.forEach((lesson, lIdx) => {
@@ -218,7 +248,7 @@
           nextKeys.add(`${dayName}_${lIdx}`);
         }
       });
-    }
+    });
 
     return nextKeys;
   }
@@ -242,34 +272,13 @@
     }
   }
 
-  function getTargetDate(dayIndex, resetTimeStr) {
-    const now = new Date();
-    const currentDay = now.getDay();
-    let targetDayNum = dayIndex + 1; 
-    let diff = targetDayNum - (currentDay === 0 ? 7 : currentDay);
-
-    const [rHours, rMinutes] = resetTimeStr.split(":").map(Number);
-    const resetTimeToday = new Date(now);
-    resetTimeToday.setHours(rHours, rMinutes, 0, 0);
-
-    if (diff === 0 && now >= resetTimeToday) {
-      diff += 7;
-    } else if (diff < 0) {
-      diff += 7;
-    }
-
-    const targetDate = new Date(now);
-    targetDate.setDate(now.getDate() + diff);
-    return targetDate;
-  }
-
   function renderGrid() {
     const resetTime = document.getElementById("resetTime").value;
     const schedule = userSchedule || defaultSchedule;
     const grid = document.getElementById("scheduleGrid");
     grid.innerHTML = "";
 
-    const nextSubjectKeys = getNextSubjectKeys(schedule);
+    const nextSubjectKeys = getNextSubjectKeys(schedule, resetTime);
 
     daysOrder.forEach((day, index) => {
       const dateObj = getTargetDate(index, resetTime);
