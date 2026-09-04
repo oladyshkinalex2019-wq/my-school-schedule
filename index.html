@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Школьный Планер</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <style>
+    :root {
+      --bg-color: var(--tg-theme-bg-color, #f4f4f9);
+      --card-bg: var(--tg-theme-secondary-bg-color, #ffffff);
+      --text-color: var(--tg-theme-text-color, #222);
+      --hint-color: var(--tg-theme-hint-color, #888);
+      --button-color: var(--tg-theme-button-color, #3390ec);
+      --button-text: var(--tg-theme-button-text-color, #fff);
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background-color: var(--bg-color);
+      color: var(--text-color);
+      margin: 0;
+      padding: 12px;
+    }
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+    }
+    .reset-settings {
+      font-size: 13px;
+      color: var(--hint-color);
+    }
+    .reset-settings input {
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      padding: 2px 4px;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 10px;
+    }
+    .day-card {
+      background: var(--card-bg);
+      border-radius: 10px;
+      padding: 10px;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+    }
+    .day-title {
+      font-weight: bold;
+      font-size: 14px;
+      margin-bottom: 2px;
+    }
+    .day-date {
+      font-size: 11px;
+      color: var(--hint-color);
+      margin-bottom: 8px;
+    }
+    .lesson-item {
+      display: flex;
+      align-items: center;
+      font-size: 13px;
+      margin-bottom: 6px;
+      cursor: pointer;
+    }
+    .lesson-item input {
+      margin-right: 6px;
+      cursor: pointer;
+    }
+    .completed {
+      text-decoration: line-through;
+      color: var(--hint-color);
+    }
+  </style>
+</head>
+<body>
+
+  <div class="header">
+    <h3 style="margin:0;">📅 Расписание</h3>
+    <div class="reset-settings">
+      Сброс в: 
+      <input type="time" id="resetTime" value="08:30" onchange="updateResetTime()">
+    </div>
+  </div>
+
+  <div class="grid" id="scheduleGrid"></div>
+
+  <script>
+    const tg = window.Telegram.WebApp;
+    tg.expand();
+
+    const userId = tg.initDataUnsafe?.user?.id || 12345; // Тестовый ID для проверки в браузере
+
+    // Базовое расписание по умолчанию
+    const defaultSchedule = {
+      "Пн": ["Математика", "Физика", "Русский язык"],
+      "Вт": ["Обществознание", "История", "Английский"],
+      "Ср": ["Алгебра", "Геометрия", "Химия"],
+      "Чт": ["Информатика", "Физика", "Биология"],
+      "Пт": ["Литература", "Русский язык", "Физкультура"],
+      "Сб": ["География", "Английский"]
+    };
+
+    const daysOrder = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб"];
+
+    function getTargetDate(dayIndex, resetTimeStr) {
+      const now = new Date();
+      const currentDay = now.getDay(); // 0 - Вс, 1 - Пн ... 6 - Сб
+      
+      // Находим разницу в днях от текущего дня до нужного (1 = Пн)
+      let targetDayNum = dayIndex + 1; 
+      let diff = targetDayNum - (currentDay === 0 ? 7 : currentDay);
+
+      const [rHours, rMinutes] = resetTimeStr.split(":").map(Number);
+      const resetTimeToday = new Date(now);
+      resetTimeToday.setHours(rHours, rMinutes, 0, 0);
+
+      // Если исследуемый день - сегодня, и время перевалило за время сброса -> переносим на следующую неделю (+7 дней)
+      if (diff === 0 && now >= resetTimeToday) {
+        diff += 7;
+      } else if (diff < 0) {
+        // Если день уже прошёл на этой неделе -> переносим на следующую неделю
+        diff += 7;
+      }
+
+      const targetDate = new Date(now);
+      targetDate.setDate(now.getDate() + diff);
+      return targetDate;
+    }
+
+    function renderGrid() {
+      const resetTime = document.getElementById("resetTime").value;
+      const grid = document.getElementById("scheduleGrid");
+      grid.innerHTML = "";
+
+      daysOrder.forEach((day, index) => {
+        const dateObj = getTargetDate(index, resetTime);
+        const dateStr = dateObj.toLocaleDateString("ru-RU", { day: "numeric", month: "long" });
+        const dateKey = dateObj.toISOString().split('T')[0];
+
+        const card = document.createElement("div");
+        card.className = "day-card";
+
+        let lessonsHtml = "";
+        (defaultSchedule[day] || []).forEach((lesson, lIdx) => {
+          const storageKey = `${userId}_${dateKey}_${day}_${lIdx}`;
+          const isChecked = localStorage.getItem(storageKey) === "true";
+
+          lessonsHtml += `
+            <label class="lesson-item ${isChecked ? 'completed' : ''}">
+              <input type="checkbox" ${isChecked ? 'checked' : ''} onchange="toggleLesson('${storageKey}', this)">
+              ${lesson}
+            </label>
+          `;
+        });
+
+        card.innerHTML = `
+          <div class="day-title">${day}</div>
+          <div class="day-date">${dateStr}</div>
+          ${lessonsHtml}
+        `;
+        grid.appendChild(card);
+      });
+    }
+
+    function toggleLesson(key, checkbox) {
+      localStorage.setItem(key, checkbox.checked);
+      checkbox.parentElement.classList.toggle("completed", checkbox.checked);
+    }
+
+    function updateResetTime() {
+      const timeVal = document.getElementById("resetTime").value;
+      localStorage.setItem(`reset_time_${userId}`, timeVal);
+      renderGrid();
+    }
+
+    // Инициализация
+    const savedTime = localStorage.getItem(`reset_time_${userId}`);
+    if (savedTime) {
+      document.getElementById("resetTime").value = savedTime;
+    }
+    renderGrid();
+  </script>
+</body>
+</html>
