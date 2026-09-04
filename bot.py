@@ -192,7 +192,7 @@ async def main():
     
     app = web.Application()
 
-    # Настраиваем CORS
+    # Настройка CORS
     cors = aiohttp_cors.setup(app, defaults={
         "*": aiohttp_cors.ResourceOptions(
             allow_credentials=True,
@@ -202,23 +202,26 @@ async def main():
         )
     })
 
-    # Добавляем маршруты
+    # Добавление маршрутов API
     r_get = app.router.add_get("/api/get_data", get_user_data)
     r_save = app.router.add_post("/api/save_schedule", save_user_schedule)
     r_toggle = app.router.add_post("/api/toggle_task", toggle_task_state)
     r_reset = app.router.add_post("/api/save_reset_time", update_reset_time_api)
 
-    # Вешаем CORS на каждый маршрут
     cors.add(r_get)
     cors.add(r_save)
     cors.add(r_toggle)
     cors.add(r_reset)
 
-    # Вместо жестко прописанного 8080 берем порт из окружения Render
-    port = int(os.getenv("PORT", 8080))
-    site = web.TCPSite(runner, "0.0.0.0", port)
+    # --- ВОТ ЭТОТ БЛОК (Проверь порядок строк) ---
+    runner = web.AppRunner(app)      # 1. Создаем runner
+    await runner.setup()             # 2. Настраиваем runner
+    
+    port = int(os.getenv("PORT", 8080)) # 3. Получаем порт Render
+    site = web.TCPSite(runner, "0.0.0.0", port) # 4. Передаем runner в TCPSite
     await site.start()
     
+    # Запуск поллинга бота
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
