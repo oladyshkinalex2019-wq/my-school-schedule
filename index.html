@@ -161,137 +161,167 @@
   </div>
 
   <script>
-    const tg = window.Telegram.WebApp;
-    tg.expand();
+  const tg = window.Telegram.WebApp;
+  tg.expand();
 
-    const userId = tg.initDataUnsafe?.user?.id || "local_user";
-    const daysOrder = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб"];
+  const userId = tg.initDataUnsafe?.user?.id || 12345;
+  const daysOrder = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб"];
 
-    // Стандартное расписание по умолчанию
-    const initialSchedule = {
-      "Пн": ["Математика", "Физика", "Русский язык"],
-      "Вт": ["Обществознание", "История", "Английский"],
-      "Ср": ["Алгебра", "Геометрия", "Химия"],
-      "Чт": ["Информатика", "Физика", "Биология"],
-      "Пт": ["Литература", "Русский язык", "Физкультура"],
-      "Сб": ["География", "Английский"]
-    };
 
-    function getSchedule() {
-      const saved = localStorage.getItem(`schedule_${userId}`);
-      return saved ? JSON.parse(saved) : initialSchedule;
-    }
+  const API_URL = "http://localhost:8080/api"; 
 
-    function getTargetDate(dayIndex, resetTimeStr) {
-      const now = new Date();
-      const currentDay = now.getDay(); // 0 = Вс, 1 = Пн ... 6 = Сб
+  let userSchedule = null;
+  let taskStates = {};
+
+  const defaultSchedule = {
+    "Пн": ["Математика", "Физика", "Русский язык"],
+    "Вт": ["Обществознание", "История", "Английский"],
+    "Ср": ["Алгебра", "Геометрия", "Химия"],
+    "Чт": ["Информатика", "Физика", "Биология"],
+    "Пт": ["Литература", "Русский язык", "Физкультура"],
+    "Сб": ["География", "Английский"]
+  };
+
+  async function loadData() {
+    try {
+      const res = await fetch(`${API_URL}/get_data?user_id=${userId}`);
+      const data = await res.json();
       
-      let targetDayNum = dayIndex + 1; 
-      let diff = targetDayNum - (currentDay === 0 ? 7 : currentDay);
-
-      const [rHours, rMinutes] = resetTimeStr.split(":").map(Number);
-      const resetTimeToday = new Date(now);
-      resetTimeToday.setHours(rHours, rMinutes, 0, 0);
-
-      if (diff === 0 && now >= resetTimeToday) {
-        diff += 7;
-      } else if (diff < 0) {
-        diff += 7;
+      userSchedule = data.schedule || defaultSchedule;
+      taskStates = data.tasks || {};
+      
+      if (data.reset_time) {
+        document.getElementById("resetTime").value = data.reset_time;
       }
+      
+      renderGrid();
+    } catch (e) {
+      console.error("Ошибка загрузки данных", e);
+      renderGrid();
+    }
+  }
 
-      const targetDate = new Date(now);
-      targetDate.setDate(now.getDate() + diff);
-      return targetDate;
+  function getTargetDate(dayIndex, resetTimeStr) {
+    const now = new Date();
+    const currentDay = now.getDay();
+    let targetDayNum = dayIndex + 1; 
+    let diff = targetDayNum - (currentDay === 0 ? 7 : currentDay);
+
+    const [rHours, rMinutes] = resetTimeStr.split(":").map(Number);
+    const resetTimeToday = new Date(now);
+    resetTimeToday.setHours(rHours, rMinutes, 0, 0);
+
+    if (diff === 0 && now >= resetTimeToday) {
+      diff += 7;
+    } else if (diff < 0) {
+      diff += 7;
     }
 
-    function renderGrid() {
-      const resetTime = document.getElementById("resetTime").value;
-      const schedule = getSchedule();
-      const grid = document.getElementById("scheduleGrid");
-      grid.innerHTML = "";
+    const targetDate = new Date(now);
+    targetDate.setDate(now.getDate() + diff);
+    return targetDate;
+  }
 
-      daysOrder.forEach((day, index) => {
-        const dateObj = getTargetDate(index, resetTime);
-        const dateStr = dateObj.toLocaleDateString("ru-RU", { day: "numeric", month: "long" });
-        const dateKey = dateObj.toISOString().split('T')[0];
+  function renderGrid() {
+    const resetTime = document.getElementById("resetTime").value;
+    const schedule = userSchedule || defaultSchedule;
+    const grid = document.getElementById("scheduleGrid");
+    grid.innerHTML = "";
 
-        const card = document.createElement("div");
-        card.className = "day-card";
+    daysOrder.forEach((day, index) => {
+      const dateObj = getTargetDate(index, resetTime);
+      const dateStr = dateObj.toLocaleDateString("ru-RU", { day: "numeric", month: "long" });
+      const dateKey = dateObj.toISOString().split('T')[0];
 
-        let lessonsHtml = "";
-        (schedule[day] || []).forEach((lesson, lIdx) => {
-          const storageKey = `${userId}_${dateKey}_${day}_${lIdx}`;
-          const isChecked = localStorage.getItem(storageKey) === "true";
+      const card = document.createElement("div");
+      card.className = "day-card";
 
-          lessonsHtml += `
-            <label class="lesson-item ${isChecked ? 'completed' : ''}">
-              <input type="checkbox" ${isChecked ? 'checked' : ''} onchange="toggleLesson('${storageKey}', this)">
-              ${lesson}
-            </label>
-          `;
-        });
+      let lessonsHtml = "";
+      (schedule[day] || []).forEach((lesson, lIdx) => {
+        const storageKey = `${userId}_${dateKey}_${day}_${lIdx}`;
+        const isChecked = taskStates[storageKey] === true;
+
+        lessonsHtml += `
+          <label class="lesson-item ${isChecked ? 'completed' : ''}">
+            <input type="checkbox" ${isChecked ? 'checked' : ''} onchange="toggleLesson('${storageKey}', this)">
+            ${lesson}
+          </label>
+        `;
+      });
 
         card.innerHTML = `
           <div class="day-title">${day}</div>
           <div class="day-date">${dateStr}</div>
           ${lessonsHtml || '<div style="font-size:12px; color:#888;">Нет уроков</div>'}
         `;
-        grid.appendChild(card);
-      });
-    }
+      grid.appendChild(card);
+    });
+  }
 
-    function toggleLesson(key, checkbox) {
-      localStorage.setItem(key, checkbox.checked);
-      checkbox.parentElement.classList.toggle("completed", checkbox.checked);
-    }
+  async function toggleLesson(key, checkbox) {
+    checkbox.parentElement.classList.toggle("completed", checkbox.checked);
+    taskStates[key] = checkbox.checked;
 
-    function updateResetTime() {
-      const timeVal = document.getElementById("resetTime").value;
-      localStorage.setItem(`reset_time_${userId}`, timeVal);
-      renderGrid();
-    }
+    await fetch(`${API_URL}/toggle_task`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ key: key, checked: checkbox.checked })
+    });
+  }
 
-    function toggleEditModal() {
-      const modal = document.getElementById("editModal");
-      const isHidden = modal.style.display === "none" || !modal.style.display;
-      modal.style.display = isHidden ? "block" : "none";
-
-      if (isHidden) {
-        const schedule = getSchedule();
-        let text = "";
-        daysOrder.forEach(day => {
-          text += `${day}: ${(schedule[day] || []).join(", ")}\n`;
-        });
-        document.getElementById("scheduleInput").value = text.trim();
-      }
-    }
-
-    function saveScheduleFromApp() {
-      const text = document.getElementById("scheduleInput").value;
-      const lines = text.split("\n");
-      const newSched = {};
-
-      lines.forEach(line => {
-        if (line.includes(":")) {
-          const [day, lessonsStr] = line.split(":");
-          const dayTrim = day.trim();
-          if (daysOrder.includes(dayTrim)) {
-            newSched[dayTrim] = lessonsStr.split(",").map(l => l.trim()).filter(Boolean);
-          }
-        }
-      });
-
-      localStorage.setItem(`schedule_${userId}`, JSON.stringify(newSched));
-      toggleEditModal();
-      renderGrid();
-    }
-
-    // Инициализация
-    const savedTime = localStorage.getItem(`reset_time_${userId}`);
-    if (savedTime) {
-      document.getElementById("resetTime").value = savedTime;
-    }
+  async function updateResetTime() {
+    const timeVal = document.getElementById("resetTime").value;
     renderGrid();
-  </script>
+
+    await fetch(`${API_URL}/save_reset_time`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ user_id: userId, reset_time: timeVal })
+    });
+  }
+
+  function toggleEditModal() {
+    const modal = document.getElementById("editModal");
+    const isHidden = modal.style.display === "none" || !modal.style.display;
+    modal.style.display = isHidden ? "block" : "none";
+
+    if (isHidden) {
+      const schedule = userSchedule || defaultSchedule;
+      let text = "";
+      daysOrder.forEach(day => {
+        text += `${day}: ${(schedule[day] || []).join(", ")}\n`;
+      });
+      document.getElementById("scheduleInput").value = text.trim();
+    }
+  }
+
+  async function saveScheduleFromApp() {
+    const text = document.getElementById("scheduleInput").value;
+    const lines = text.split("\n");
+    const newSched = {};
+
+    lines.forEach(line => {
+      if (line.includes(":")) {
+        const [day, lessonsStr] = line.split(":");
+        const dayTrim = day.trim();
+        if (daysOrder.includes(dayTrim)) {
+          newSched[dayTrim] = lessonsStr.split(",").map(l => l.trim()).filter(Boolean);
+        }
+      }
+    });
+
+    userSchedule = newSched;
+    toggleEditModal();
+    renderGrid();
+
+    await fetch(`${API_URL}/save_schedule`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ user_id: userId, schedule: newSched })
+    });
+  }
+
+  loadData();
+</script>
 </body>
 </html>
