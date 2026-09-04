@@ -214,9 +214,9 @@ async def main():
     cors.add(r_toggle)
     cors.add(r_reset)
 
-    runner = web.AppRunner(app)
-    await runner.setup()
-    site = web.TCPSite(runner, "0.0.0.0", 8080)
+    # Вместо жестко прописанного 8080 берем порт из окружения Render
+    port = int(os.getenv("PORT", 8080))
+    site = web.TCPSite(runner, "0.0.0.0", port)
     await site.start()
     
     await dp.start_polling(bot)
